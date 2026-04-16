@@ -274,6 +274,13 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     private val isFlyingKey: DJIKey<Boolean> = FlightControllerKey.KeyIsFlying.create()
     private val productTypeKey: DJIKey<ProductType> = ProductKey.KeyProductType.create()
 
+    /**
+     * Pre-built telemetry JSON string, refreshed via KeyManager listeners whenever
+     * any telemetry value changes.  getTelemetryJson() just returns this cached string
+     * so the TelemetryServer send loop (Thread.sleep 10 ms) does zero SDK work.
+     */
+    @Volatile private var cachedTelemetryJson: String = "{}"
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
@@ -632,11 +639,18 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         // Keep altitude display in sync with every position update
         KeyManager.getInstance().listen(location3DKey, this) { _, newValue ->
             mainHandler.post { updateAltitudeView(newValue?.altitude ?: 0.0) }
+            rebuildTelemetryCache()
         }
         // Satellite count
         KeyManager.getInstance().listen(satelliteCountKey, this) { _, newValue ->
             mainHandler.post { updateSatelliteView(newValue ?: 0) }
+            rebuildTelemetryCache()
         }
+        // High-frequency keys: rebuild cache on every SDK push
+        KeyManager.getInstance().listen(attitudeKey, this) { _, _ -> rebuildTelemetryCache() }
+        KeyManager.getInstance().listen(compassHeadKey, this) { _, _ -> rebuildTelemetryCache() }
+        KeyManager.getInstance().listen(flightSpeedKey, this) { _, _ -> rebuildTelemetryCache() }
+        KeyManager.getInstance().listen(batteryKey, this) { _, _ -> rebuildTelemetryCache() }
     }
     
     private fun loadDroneName() {
@@ -1170,7 +1184,18 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         return isHomePointSetLatch
     }
 
-    private fun getTelemetryJson(): String {
+    /**
+     * Called by getTelemetryJson() — now just returns the pre-built cache.
+     * The cache is rebuilt by KeyManager listeners whenever any telemetry key
+     * changes, so the TelemetryServer send thread does zero SDK work per tick.
+     */
+    private fun getTelemetryJson(): String = cachedTelemetryJson
+
+    private fun rebuildTelemetryCache() {
+        cachedTelemetryJson = buildTelemetryJson()
+    }
+
+    private fun buildTelemetryJson(): String {
         val goHomeInfo = goHomeAssessmentProcessor.value
         val speed = getSpeed()
         val heading = getHeading()
