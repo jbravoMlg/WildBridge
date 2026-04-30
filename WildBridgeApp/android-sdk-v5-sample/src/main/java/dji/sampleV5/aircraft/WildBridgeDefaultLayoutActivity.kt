@@ -114,6 +114,9 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         private const val TELEMETRY_PORT = 8081
         private const val WEBRTC_PORT = 8082
         private const val MEDIAMTX_WHIP_PORT = 8889  // mediamtx WebRTC port for WHIP publish
+        private const val PREF_DRONE_NAME = "drone_name"
+        private const val PREF_MEDIAMTX_SERVER = "mediamtx_server"
+        private const val DEFAULT_DRONE_NAME = "drone_1"
         private const val DISCOVERY_PORT = 30000
         private const val DISCOVERY_MSG = "DISCOVER_WILDBRIDGE"
         private const val DISCOVERY_RESPONSE_PREFIX = "WILDBRIDGE_HERE:"
@@ -151,7 +154,7 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     
     // Drone Configuration
     private lateinit var sharedPreferences: SharedPreferences
-    private var droneName: String = "drone_1"
+    private var droneName: String = DEFAULT_DRONE_NAME
 
     // Phone Location
     private var locationManager: LocationManager? = null
@@ -378,11 +381,15 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     // ==================== End Mode Toggle ====================
 
     private fun buildWebRTCOptions(): WebRTCMediaOptions {
+        // Conservative defaults to survive ZeroTier/Wi-Fi packet loss.
+        // 8 Mbps @ 1080p over a tunneled link causes RTP fragmentation loss
+        // ("invalid FU-A non-starting" in mediamtx) and constant reconnects.
+        // 720p @ 2 Mbps is plenty for downstream detection and is robust.
         return WebRTCMediaOptions(
-            videoResolutionWidth = 1920,
-            videoResolutionHeight = 1080,
+            videoResolutionWidth = 1280,
+            videoResolutionHeight = 720,
             fps = 15,
-            videoBitrate = 8_000_000,
+            videoBitrate = 2_000_000,
             videoCodec = "H264"
         )
     }
@@ -632,9 +639,15 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     }
     
     private fun loadDroneName() {
-        droneName = sharedPreferences.getString("drone_name", null) ?: ""
+        val storedName = sharedPreferences.getString(PREF_DRONE_NAME, DEFAULT_DRONE_NAME)?.trim().orEmpty()
+        droneName = storedName.ifEmpty { DEFAULT_DRONE_NAME }
 
-        if (droneName.isEmpty()) {
+        if (storedName.isEmpty()) {
+            // Persist a safe fallback to avoid generating malformed URLs like //whip.
+            sharedPreferences.edit().putString(PREF_DRONE_NAME, droneName).apply()
+        }
+
+        if (storedName.isEmpty()) {
             // First time - prompt user for drone name
             mainHandler.post {
                 showDroneNameDialog(isFirstTime = true)
@@ -660,14 +673,14 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
                 val name = input.text.toString().trim()
                 if (name.isNotEmpty()) {
                     droneName = name
-                    sharedPreferences.edit().putString("drone_name", droneName).apply()
+                    sharedPreferences.edit().putString(PREF_DRONE_NAME, droneName).apply()
                     WildBridgeFlightLogger.setDroneName(droneName)
                     Log.i(TAG, "Drone name set to: $droneName")
                     Toast.makeText(this, "Drone name saved: $droneName", Toast.LENGTH_SHORT).show()
                     updateDroneNameDisplay()
                 } else {
-                    droneName = "drone_1"
-                    sharedPreferences.edit().putString("drone_name", droneName).apply()
+                    droneName = DEFAULT_DRONE_NAME
+                    sharedPreferences.edit().putString(PREF_DRONE_NAME, droneName).apply()
                     WildBridgeFlightLogger.setDroneName(droneName)
                     Toast.makeText(this, "Using default name: $droneName", Toast.LENGTH_SHORT).show()
                     updateDroneNameDisplay()
@@ -681,6 +694,52 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         }
         
         builder.show()
+    }
+
+    private fun showMediamtxServerDialog() {
+        val input = EditText(this)
+        val current = sharedPreferences.getString(PREF_MEDIAMTX_SERVER, "").orEmpty()
+        input.hint = "host o host:puerto (ej: 10.233.132.21:8889)"
+        input.setText(current)
+
+        AlertDialog.Builder(this)
+            .setTitle("WHIP / mediamtx server")
+            .setMessage("Opcional: si se deja vacío, se usa la IP del primer cliente de telemetría.")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val value = input.text.toString().trim()
+                sharedPreferences.edit().putString(PREF_MEDIAMTX_SERVER, value).apply()
+                val shown = if (value.isEmpty()) "auto (client IP)" else value
+                Log.i(TAG, "Mediamtx server set to: $shown")
+                Toast.makeText(this, "WHIP server: $shown", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun buildWhipUrl(clientIp: String): String {
+        val safeDroneName = droneName.trim().ifEmpty {
+            DEFAULT_DRONE_NAME
+        }
+
+        val configuredServer = sharedPreferences.getString(PREF_MEDIAMTX_SERVER, "")
+            ?.trim()
+            .orEmpty()
+
+        val hostAndPort = if (configuredServer.isEmpty()) {
+            "$clientIp:$MEDIAMTX_WHIP_PORT"
+        } else {
+            var normalized = configuredServer
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .trimEnd('/')
+            if (!normalized.contains(':')) {
+                normalized = "$normalized:$MEDIAMTX_WHIP_PORT"
+            }
+            normalized
+        }
+
+        return "http://$hostAndPort/$safeDroneName/whip"
     }
 
     private fun startLocationUpdates() {
@@ -753,7 +812,7 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
             try {
                 telemetryServer = TelemetryServer(TELEMETRY_PORT, ::getTelemetryJson)
                 telemetryServer?.onFirstClientConnected = { clientIp ->
-                    val whipUrl = "http://$clientIp:$MEDIAMTX_WHIP_PORT/$droneName/whip"
+                    val whipUrl = buildWhipUrl(clientIp)
                     Log.i(TAG, "First telemetry client from $clientIp — starting WHIP: $whipUrl")
                     Thread { startWhipPublishing(whipUrl) }.start()
                 }
@@ -858,6 +917,7 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menu.add(0, 1, 0, "Change Drone Name")
+        menu.add(0, 2, 1, "Set WHIP Server")
         return super.onCreateOptionsMenu(menu)
     }
     
@@ -865,6 +925,10 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         return when (item.itemId) {
             1 -> {
                 showDroneNameDialog(isFirstTime = false)
+                true
+            }
+            2 -> {
+                showMediamtxServerDialog()
                 true
             }
             else -> super.onOptionsItemSelected(item)

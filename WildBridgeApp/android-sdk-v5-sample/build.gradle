@@ -3,13 +3,31 @@ apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-kapt'
 
 android {
-    // Load AIRCRAFT_API_KEY from local.properties or environment variable
+    // Load secrets from local.properties or environment variables.
     def localProps = new Properties()
     def lpFile = rootProject.file("local.properties")
     if (lpFile.exists()) {
         lpFile.withInputStream { localProps.load(it) }
     }
-    def aircraftApiKey = System.getenv("AIRCRAFT_API_KEY") ?: localProps.getProperty("AIRCRAFT_API_KEY", "")
+    def resolveSecret = { key ->
+        def envValue = System.getenv(key)
+        if (envValue != null && envValue.trim()) {
+            return envValue.trim()
+        }
+        def localValue = localProps.getProperty(key)
+        if (localValue != null && localValue.trim()) {
+            return localValue.trim()
+        }
+        return project.findProperty(key)?.toString()?.trim() ?: ""
+    }
+    def aircraftApiKey = resolveSecret("AIRCRAFT_API_KEY")
+    def gmapApiKey = resolveSecret("GMAP_API_KEY")
+    def maplibreToken = resolveSecret("MAPLIBRE_TOKEN")
+    def droneControlProfile = (project.findProperty("droneControlProfile") ?: "mini").toString().trim().toLowerCase()
+    if (!(droneControlProfile in ["mini", "m350"])) {
+        throw new GradleException("Invalid droneControlProfile='${droneControlProfile}'. Use -PdroneControlProfile=mini or -PdroneControlProfile=m350")
+    }
+    def isM350ControlProfile = droneControlProfile == "m350"
 
     namespace 'dji.sampleV5.aircraft'
     compileSdkVersion Integer.parseInt(project.ANDROID_COMPILE_SDK_VERSION)
@@ -21,8 +39,10 @@ android {
         versionCode 1
         versionName "1.0"
         manifestPlaceholders["API_KEY"] = aircraftApiKey
-        manifestPlaceholders["GMAP_API_KEY"] = project.GMAP_API_KEY
-        manifestPlaceholders["MAPLIBRE_TOKEN"] = project.MAPLIBRE_TOKEN
+        manifestPlaceholders["GMAP_API_KEY"] = gmapApiKey
+        manifestPlaceholders["MAPLIBRE_TOKEN"] = maplibreToken
+        buildConfigField "String", "DRONE_CONTROL_PROFILE", "\"${droneControlProfile}\""
+        buildConfigField "boolean", "DRONE_CONTROL_PROFILE_M350", isM350ControlProfile.toString()
         ndk {
             //noinspection ChromeOsAbiSupport
             abiFilters 'arm64-v8a'
@@ -49,6 +69,12 @@ android {
             minifyEnabled false
             shrinkResources false
             //signingConfig signingConfigs.release
+        }
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "sample-${droneControlProfile}-${variant.name}.apk"
         }
     }
 
@@ -106,6 +132,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig true
         viewBinding true
     }
 }

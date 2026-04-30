@@ -2,6 +2,7 @@ package dji.sampleV5.aircraft.controller
 
 import android.os.Handler
 import android.os.Looper
+import dji.sampleV5.aircraft.BuildConfig
 import dji.sampleV5.aircraft.models.BasicAircraftControlVM
 import dji.sampleV5.aircraft.models.VirtualStickVM
 import dji.v5.common.callback.CommonCallbacks
@@ -67,6 +68,16 @@ object DroneController {
     const val WP_ACCEPT_ALTITUDE_M = 0.5    // vertical error in meters
     const val WP_ACCEPT_YAW_DEG = 4.0       // yaw error in degrees
 
+    // Limit how quickly autonomous waypoint control can increase horizontal
+    // speed. DJI Virtual Stick velocity mode accepts m/s setpoints directly,
+    // so jumping from 0 to the saturated target speed feels like an initial
+    // lunge, especially on lighter aircraft such as Mini 4 Pro.
+    private const val MAX_HORIZONTAL_ACCEL_MPS2 = 0.5
+
+    private val distancePidKp: Double = if (BuildConfig.DRONE_CONTROL_PROFILE_M350) 0.34 else 0.65
+    private val yawPidKp: Double = if (BuildConfig.DRONE_CONTROL_PROFILE_M350) 3.0 else 3.0
+    private val waypointPidOutputLimit: Double = if (BuildConfig.DRONE_CONTROL_PROFILE_M350) 2.0 else 15.0
+
     // Listener interface so the UI can react to automatic activation
     interface ManualOverrideListener {
         fun onManualOverrideActivated()
@@ -81,6 +92,10 @@ object DroneController {
         if (!isManualOverrideActive) {
             isManualOverrideActive = true
             cancelActiveControlLoop()
+            virtualStickVM?.disableVirtualStick(object : CommonCallbacks.CompletionCallback {
+                override fun onSuccess() { }
+                override fun onFailure(error: IDJIError) { }
+            })
             setDroneStatus(DroneStatus.MANUAL_OVERRIDE)
             ToastUtils.showToast("⚠ MANUAL OVERRIDE ACTIVE — autonomous commands blocked")
             manualOverrideListener?.onManualOverrideActivated()
@@ -639,7 +654,7 @@ object DroneController {
                 }
 
                 // Proportional gain
-                val Kp = 0.5 // Adjust this gain as needed
+                val Kp = 0.4 // Adjust this gain as needed
 
                 // Calculate the vertical speed command
                 var verticalSpeed = Kp * altitudeError
@@ -680,6 +695,7 @@ object DroneController {
         
         val controlLoop = Handler(Looper.getMainLooper())
         val updateInterval: Long = 100 // Update every 100 ms
+        var lastCommandedSpeed = 0f
 
         // Enable Virtual Stick and advanced mode
         // NOTE: Use VM directly, not enableVirtualStick() which would cancel the loop we just started
@@ -738,8 +754,8 @@ object DroneController {
                 val yawControl = adjustedDesiredYaw
 
                 // Compute forward speed proportional to the distance to the waypoint
-                val maxSpeed = 5f // Maximum speed in m/s
-                val kp = 0.5f // Proportional gain
+                val maxSpeed = 2f // Maximum speed in m/s
+                val kp = 0.4f // Proportional gain
 
                 var speed = (kp * distanceToWaypoint).toFloat()
 
@@ -751,6 +767,10 @@ object DroneController {
                 val maxYawError = 15f // degrees
                 val yawErrorFactor = max(0f, 1f - (abs(yawError) / maxYawError).toFloat())
                 speed *= yawErrorFactor
+
+                val maxSpeedStep = (MAX_HORIZONTAL_ACCEL_MPS2 * (updateInterval / 1000.0)).toFloat()
+                speed = speed.coerceAtMost(lastCommandedSpeed + maxSpeedStep)
+                lastCommandedSpeed = speed
 
                 val forwardSpeed = speed.toDouble()
                 val lateralSpeed = 0.0 // No lateral movement
@@ -803,6 +823,7 @@ object DroneController {
 
         val updateInterval = 100.0  // Update every 100 ms
         val maxYawRate = 30.0 // degrees per second
+        var lastCommandedSpeed = 0.0
 
         virtualStickVM?.enableVirtualStickAdvancedMode()
         // NOTE: Use VM directly, not enableVirtualStick() which would cancel the loop we just started
@@ -814,9 +835,10 @@ object DroneController {
         })
         virtualStickVM?.enableVirtualStickAdvancedMode()
 
-        // PID upper bound is generous (15 m/s); actual speed is clamped per-tick to target.maxSpeed
-        val distancePID = PID(0.65, 0.0001, 0.001, updateInterval/1000, 0.0 to 15.0)
-        val yawPID = PID(3.0, 0.0000, 0.00, updateInterval/1000, -maxYawRate to maxYawRate)
+        // PID gains are selected at compile time with -PdroneControlProfile.
+        // Mini keeps the original tuning; M350 uses the smoother field tuning.
+        val distancePID = PID(distancePidKp, 0.0001, 0.001, updateInterval/1000, 0.0 to waypointPidOutputLimit)
+        val yawPID = PID(yawPidKp, 0.0000, 0.00, updateInterval/1000, -maxYawRate to maxYawRate)
 
         val controlLoop = Handler(Looper.getMainLooper())
         virtualStickVM?.enableVirtualStickAdvancedMode()
@@ -847,7 +869,10 @@ object DroneController {
                 val currentYaw = getHeading()
 
                 val distance = calculateDistance(target.latitude, target.longitude, currentPosition.latitude, currentPosition.longitude)
-                val targetSpeed = distancePID.update(distance).coerceAtMost(target.maxSpeed)
+                val pidSpeed = distancePID.update(distance).coerceAtMost(target.maxSpeed)
+                val maxSpeedStep = MAX_HORIZONTAL_ACCEL_MPS2 * (updateInterval / 1000.0)
+                val targetSpeed = pidSpeed.coerceAtMost(lastCommandedSpeed + maxSpeedStep)
+                lastCommandedSpeed = targetSpeed
                 val movementDirection = calculateBearing(currentPosition.latitude, currentPosition.longitude, target.latitude, target.longitude).toDouble()
 
                 val yawError = normalizeAngle(target.yaw - currentYaw)
@@ -905,10 +930,10 @@ object DroneController {
 
     fun navigateTrajectory(
         waypoints: List<Triple<Double, Double, Double>>,
-        lookaheadDistance: Double = 5.5,
-        cruiseSpeed: Double = 5.0,
-        minSpeedFinal: Double = 1.0,
-        slowdownRadius: Double = 4.0
+        lookaheadDistance: Double = 2.5,
+        cruiseSpeed: Double = 2.0,
+        minSpeedFinal: Double = 0.6,
+        slowdownRadius: Double = 5.0
     ) {
         stopCurrentMission()
         if (waypoints.size < 2) return
@@ -933,6 +958,7 @@ object DroneController {
         })
         virtualStickVM?.enableVirtualStickAdvancedMode()
         val controlLoop = Handler(Looper.getMainLooper())
+        var lastCommandedSpeed = 0.0
 
         // Helper: Compute great-circle distance (meters) between two lat/lon
         fun calculateDistance(latA: Double, lonA: Double, latB: Double, lonB: Double): Double {
@@ -1038,6 +1064,17 @@ object DroneController {
                     if (distToEnd < slowdownRadius)
                         targetSpeed = minSpeedFinal + (cruiseSpeed - minSpeedFinal) * (distToEnd / slowdownRadius)
                 }
+
+                // Slow down while the aircraft is still turning toward the local
+                // lookahead direction. This reduces corner cutting on curved
+                // drawn trajectories and keeps Mini 4 Pro behaviour closer to
+                // the well-tested point-to-point controller.
+                val yawErrorFactor = max(0.35, 1.0 - (abs(yawError) / 45.0))
+                targetSpeed *= yawErrorFactor
+
+                val maxSpeedStep = MAX_HORIZONTAL_ACCEL_MPS2 * (updateIntervalMs / 1000.0)
+                targetSpeed = targetSpeed.coerceAtMost(lastCommandedSpeed + maxSpeedStep)
+                lastCommandedSpeed = targetSpeed
 
                 val forwardSpeed = targetSpeed * cos(Math.toRadians(moveDirRel))
                 val lateralSpeed = targetSpeed * sin(Math.toRadians(moveDirRel))
