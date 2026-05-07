@@ -42,6 +42,7 @@ import dji.sampleV5.aircraft.models.VirtualStickVM
 import dji.sampleV5.aircraft.server.TelemetryServer
 import dji.sampleV5.aircraft.webrtc.WebRTCMediaOptions
 import dji.sampleV5.aircraft.webrtc.WebRTCStreamer
+import dji.sampleV5.aircraft.webrtc.WebRTCStreamMetrics
 import dji.sampleV5.aircraft.webrtc.TelemetryProvider
 import dji.sdk.keyvalue.key.BatteryKey
 import dji.sdk.keyvalue.key.CameraKey
@@ -56,6 +57,7 @@ import dji.sdk.keyvalue.value.common.EmptyMsg
 import dji.sdk.keyvalue.value.common.LocationCoordinate2D
 import dji.sdk.keyvalue.value.common.LocationCoordinate3D
 import dji.sdk.keyvalue.value.common.Velocity3D
+import dji.sdk.keyvalue.value.camera.CameraStorageLocation
 import dji.sdk.keyvalue.value.flightcontroller.FlightMode
 import dji.sdk.keyvalue.value.flightcontroller.LowBatteryRTHInfo
 import dji.sdk.keyvalue.value.gimbal.GimbalAngleRotation
@@ -116,6 +118,9 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         private const val TELEMETRY_PORT = 8081
         private const val WEBRTC_PORT = 8082
         private const val MEDIAMTX_WHIP_PORT = 8889  // mediamtx WebRTC port for WHIP publish
+        private const val PREF_DRONE_NAME = "drone_name"
+        private const val PREF_MEDIAMTX_SERVER = "mediamtx_server"
+        private const val DEFAULT_DRONE_NAME = "drone_1"
         private const val DISCOVERY_PORT = 30000
         private const val DISCOVERY_MSG = "DISCOVER_WILDBRIDGE"
         private const val DISCOVERY_RESPONSE_PREFIX = "WILDBRIDGE_HERE:"
@@ -153,7 +158,7 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     
     // Drone Configuration
     private lateinit var sharedPreferences: SharedPreferences
-    private var droneName: String = "drone_1"
+    private var droneName: String = DEFAULT_DRONE_NAME
 
     // Phone Location
     private var locationManager: LocationManager? = null
@@ -274,13 +279,6 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     private val isFlyingKey: DJIKey<Boolean> = FlightControllerKey.KeyIsFlying.create()
     private val productTypeKey: DJIKey<ProductType> = ProductKey.KeyProductType.create()
 
-    /**
-     * Pre-built telemetry JSON string, refreshed via KeyManager listeners whenever
-     * any telemetry value changes.  getTelemetryJson() just returns this cached string
-     * so the TelemetryServer send loop (Thread.sleep 10 ms) does zero SDK work.
-     */
-    @Volatile private var cachedTelemetryJson: String = "{}"
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
@@ -308,6 +306,9 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
 
         // Setup AI Detection (AutoSensing) toggle & overlay
         setupAutoSensingToggle()
+
+        setupDetectedDroneProfileListener()
+        updateWebRTCMetricsView(WebRTCStreamMetrics())
 
         // Setup drone status indicator
         setupDroneStatusView()
@@ -388,13 +389,30 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     // ==================== End Mode Toggle ====================
 
     private fun buildWebRTCOptions(): WebRTCMediaOptions {
-        return WebRTCMediaOptions(
-            videoResolutionWidth = 1920,
-            videoResolutionHeight = 1080,
-            fps = 15,
-            videoBitrate = 8_000_000,
-            videoCodec = "H264"
-        )
+        return WebRTCMediaOptions.fullHD()
+    }
+
+    private fun setupDetectedDroneProfileListener() {
+        applyDetectedDroneProfile(productTypeKey.get(ProductType.UNKNOWN) ?: ProductType.UNKNOWN)
+        KeyManager.getInstance().listen(productTypeKey, this) { _, newValue ->
+            mainHandler.post {
+                applyDetectedDroneProfile(newValue ?: ProductType.UNKNOWN)
+            }
+        }
+    }
+
+    private fun applyDetectedDroneProfile(productType: ProductType) {
+        val controlProfile = DroneControlProfiles.fromProductType(productType)
+        val controlLabel = when (controlProfile) {
+            DroneControlProfile.MATRICE_350_RTK -> "CTRL M350"
+            DroneControlProfile.MINI_4_PRO -> "CTRL MINI4"
+        }
+        findViewById<TextView>(R.id.text_control_profile)?.text = controlLabel
+        Log.i(TAG, "Detected product $productType -> using ${controlProfile.displayName} profile")
+    }
+
+    private fun updateWebRTCMetricsView(metrics: WebRTCStreamMetrics) {
+        findViewById<TextView>(R.id.text_webrtc_metrics)?.text = metrics.compactLabel()
     }
 
     /**
@@ -551,10 +569,6 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         findViewById<TextView>(R.id.text_altitude)?.text = "ALT ${altitudeMetres.toInt()}m"
     }
 
-    private fun updateSatelliteView(count: Int) {
-        findViewById<TextView>(R.id.text_satellite_count)?.text = "SAT $count"
-    }
-
     private fun setupDroneNameDisplay() {
         // Find the TextView in the layout
         val droneNameText = findViewById<TextView>(R.id.text_drone_name)
@@ -575,11 +589,6 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     }
 
     private fun setupKeyListeners() {
-        val currentProductType = productTypeKey.get(ProductType.UNRECOGNIZED)
-        DroneController.applyDroneProfile(currentProductType.name)
-        KeyManager.getInstance().listen(productTypeKey, this) { _, newValue ->
-            DroneController.applyDroneProfile(newValue?.name ?: ProductType.UNRECOGNIZED.name)
-        }
         KeyManager.getInstance().listen(chargeRemainingKey, this) { _, newValue ->
             chargeRemainingProcessor.onNext(newValue ?: 0)
         }
@@ -639,24 +648,19 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         // Keep altitude display in sync with every position update
         KeyManager.getInstance().listen(location3DKey, this) { _, newValue ->
             mainHandler.post { updateAltitudeView(newValue?.altitude ?: 0.0) }
-            rebuildTelemetryCache()
         }
-        // Satellite count
-        KeyManager.getInstance().listen(satelliteCountKey, this) { _, newValue ->
-            mainHandler.post { updateSatelliteView(newValue ?: 0) }
-            rebuildTelemetryCache()
-        }
-        // High-frequency keys: rebuild cache on every SDK push
-        KeyManager.getInstance().listen(attitudeKey, this) { _, _ -> rebuildTelemetryCache() }
-        KeyManager.getInstance().listen(compassHeadKey, this) { _, _ -> rebuildTelemetryCache() }
-        KeyManager.getInstance().listen(flightSpeedKey, this) { _, _ -> rebuildTelemetryCache() }
-        KeyManager.getInstance().listen(batteryKey, this) { _, _ -> rebuildTelemetryCache() }
     }
     
     private fun loadDroneName() {
-        droneName = sharedPreferences.getString("drone_name", null) ?: ""
+        val storedName = sharedPreferences.getString(PREF_DRONE_NAME, DEFAULT_DRONE_NAME)?.trim().orEmpty()
+        droneName = storedName.ifEmpty { DEFAULT_DRONE_NAME }
 
-        if (droneName.isEmpty()) {
+        if (storedName.isEmpty()) {
+            // Persist a safe fallback to avoid generating malformed URLs like //whip.
+            sharedPreferences.edit().putString(PREF_DRONE_NAME, droneName).apply()
+        }
+
+        if (storedName.isEmpty()) {
             // First time - prompt user for drone name
             mainHandler.post {
                 showDroneNameDialog(isFirstTime = true)
@@ -682,14 +686,14 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
                 val name = input.text.toString().trim()
                 if (name.isNotEmpty()) {
                     droneName = name
-                    sharedPreferences.edit().putString("drone_name", droneName).apply()
+                    sharedPreferences.edit().putString(PREF_DRONE_NAME, droneName).apply()
                     WildBridgeFlightLogger.setDroneName(droneName)
                     Log.i(TAG, "Drone name set to: $droneName")
                     Toast.makeText(this, "Drone name saved: $droneName", Toast.LENGTH_SHORT).show()
                     updateDroneNameDisplay()
                 } else {
-                    droneName = "drone_1"
-                    sharedPreferences.edit().putString("drone_name", droneName).apply()
+                    droneName = DEFAULT_DRONE_NAME
+                    sharedPreferences.edit().putString(PREF_DRONE_NAME, droneName).apply()
                     WildBridgeFlightLogger.setDroneName(droneName)
                     Toast.makeText(this, "Using default name: $droneName", Toast.LENGTH_SHORT).show()
                     updateDroneNameDisplay()
@@ -703,6 +707,83 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         }
         
         builder.show()
+    }
+
+    private fun showMediamtxServerDialog() {
+        val input = EditText(this)
+        val current = sharedPreferences.getString(PREF_MEDIAMTX_SERVER, "").orEmpty()
+        input.hint = "host o host:puerto (ej: 10.233.132.21:8889)"
+        input.setText(current)
+
+        AlertDialog.Builder(this)
+            .setTitle("WHIP / mediamtx server")
+            .setMessage("Opcional: si se deja vacío, se usa la IP del primer cliente de telemetría.")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val value = input.text.toString().trim()
+                sharedPreferences.edit().putString(PREF_MEDIAMTX_SERVER, value).apply()
+                val shown = if (value.isEmpty()) "auto (client IP)" else value
+                Log.i(TAG, "Mediamtx server set to: $shown")
+                Toast.makeText(this, "WHIP server: $shown", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showFormatStorageDialog(location: CameraStorageLocation, label: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Format $label")
+            .setMessage("This deletes all media on the drone $label. Stop recording first, then continue only if you are sure.")
+            .setPositiveButton("Format") { _, _ ->
+                formatDroneStorage(location, label)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun formatDroneStorage(location: CameraStorageLocation, label: String) {
+        val key = KeyTools.createKey(CameraKey.KeyFormatStorage, ComponentIndexType.LEFT_OR_MAIN)
+        KeyManager.getInstance().performAction(key, location, object : CommonCallbacks.CompletionCallbackWithParam<EmptyMsg> {
+            override fun onSuccess(result: EmptyMsg?) {
+                mainHandler.post {
+                    Toast.makeText(this@WildBridgeDefaultLayoutActivity, "$label formatted", Toast.LENGTH_LONG).show()
+                }
+                Log.i(TAG, "Formatted drone $label")
+            }
+
+            override fun onFailure(error: IDJIError) {
+                val message = "Failed to format $label: ${error.description()}"
+                mainHandler.post {
+                    Toast.makeText(this@WildBridgeDefaultLayoutActivity, message, Toast.LENGTH_LONG).show()
+                }
+                Log.e(TAG, message)
+            }
+        })
+    }
+
+    private fun buildWhipUrl(clientIp: String): String {
+        val safeDroneName = droneName.trim().ifEmpty {
+            DEFAULT_DRONE_NAME
+        }
+
+        val configuredServer = sharedPreferences.getString(PREF_MEDIAMTX_SERVER, "")
+            ?.trim()
+            .orEmpty()
+
+        val hostAndPort = if (configuredServer.isEmpty()) {
+            "$clientIp:$MEDIAMTX_WHIP_PORT"
+        } else {
+            var normalized = configuredServer
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .trimEnd('/')
+            if (!normalized.contains(':')) {
+                normalized = "$normalized:$MEDIAMTX_WHIP_PORT"
+            }
+            normalized
+        }
+
+        return "http://$hostAndPort/$safeDroneName/whip"
     }
 
     private fun startLocationUpdates() {
@@ -775,7 +856,7 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
             try {
                 telemetryServer = TelemetryServer(TELEMETRY_PORT, ::getTelemetryJson)
                 telemetryServer?.onFirstClientConnected = { clientIp ->
-                    val whipUrl = "http://$clientIp:$MEDIAMTX_WHIP_PORT/$droneName/whip"
+                    val whipUrl = buildWhipUrl(clientIp)
                     Log.i(TAG, "First telemetry client from $clientIp — starting WHIP: $whipUrl")
                     Thread { startWhipPublishing(whipUrl) }.start()
                 }
@@ -793,7 +874,7 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         // WHIP publishing starts automatically when bridge connects to telemetry.
         try {
             webRTCStreamer = WebRTCStreamer(
-                context = this,
+                context = applicationContext,
                 cameraIndex = ComponentIndexType.LEFT_OR_MAIN,
                 signalingPort = WEBRTC_PORT,
                 droneName = droneName,
@@ -811,6 +892,9 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
                 }
                 override fun onClientConnected(clientId: String, totalClients: Int) {}
                 override fun onClientDisconnected(clientId: String, totalClients: Int) {}
+                override fun onMetrics(metrics: WebRTCStreamMetrics) {
+                    mainHandler.post { updateWebRTCMetricsView(metrics) }
+                }
             }
             Log.i(TAG, "WebRTC streamer ready (WHIP starts on first telemetry client)")
 
@@ -847,9 +931,14 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         
         // Stop all servers
         httpServer?.stop()
+        telemetryServer?.onFirstClientConnected = null
         telemetryServer?.stop()
+        webRTCStreamer?.listener = null
         webRTCStreamer?.stop()
         stopDiscoveryServer()
+        httpServer = null
+        telemetryServer = null
+        webRTCStreamer = null
         
         // Unregister mDNS service
         unregisterMdnsService()
@@ -869,17 +958,23 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         KeyManager.getInstance().cancelListen(this)
         
         // Clean up DroneController listeners and resources
+        DroneController.manualOverrideListener = null
         DroneController.droneStatusListener = null
         DroneController.destroy()
 
         // Close the active flight log if the app is killed mid-flight
         WildBridgeFlightLogger.endSession("app_stopped")
 
+        mainHandler.removeCallbacksAndMessages(null)
+
         Log.i(TAG, "All servers stopped")
     }
     
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menu.add(0, 1, 0, "Change Drone Name")
+        menu.add(0, 2, 1, "Set WHIP Server")
+        menu.add(0, 3, 2, "Format Drone SD Card")
+        menu.add(0, 4, 3, "Format Drone Internal Storage")
         return super.onCreateOptionsMenu(menu)
     }
     
@@ -887,6 +982,18 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         return when (item.itemId) {
             1 -> {
                 showDroneNameDialog(isFirstTime = false)
+                true
+            }
+            2 -> {
+                showMediamtxServerDialog()
+                true
+            }
+            3 -> {
+                showFormatStorageDialog(CameraStorageLocation.SDCARD, "SD card")
+                true
+            }
+            4 -> {
+                showFormatStorageDialog(CameraStorageLocation.INTERNAL, "internal storage")
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -1184,18 +1291,7 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         return isHomePointSetLatch
     }
 
-    /**
-     * Called by getTelemetryJson() — now just returns the pre-built cache.
-     * The cache is rebuilt by KeyManager listeners whenever any telemetry key
-     * changes, so the TelemetryServer send thread does zero SDK work per tick.
-     */
-    private fun getTelemetryJson(): String = cachedTelemetryJson
-
-    private fun rebuildTelemetryCache() {
-        cachedTelemetryJson = buildTelemetryJson()
-    }
-
-    private fun buildTelemetryJson(): String {
+    private fun getTelemetryJson(): String {
         val goHomeInfo = goHomeAssessmentProcessor.value
         val speed = getSpeed()
         val heading = getHeading()
