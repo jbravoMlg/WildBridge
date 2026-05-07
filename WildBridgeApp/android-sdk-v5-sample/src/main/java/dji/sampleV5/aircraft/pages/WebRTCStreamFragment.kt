@@ -12,11 +12,14 @@ import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
 import dji.sampleV5.aircraft.R
 import dji.sampleV5.aircraft.util.ToastUtils
 import dji.sampleV5.aircraft.webrtc.WebRTCMediaOptions
+import dji.sampleV5.aircraft.webrtc.WebRTCResolutionProfile
+import dji.sampleV5.aircraft.webrtc.WebRTCResolutionProfiles
 import dji.sampleV5.aircraft.webrtc.WebRTCStreamer
 import dji.sdk.keyvalue.value.common.ComponentIndexType
 import dji.v5.manager.datacenter.MediaDataCenter
@@ -46,6 +49,7 @@ class WebRTCStreamFragment : DJIFragment() {
     private lateinit var tvServerPort: TextView
     private lateinit var tvClientCount: TextView
     private lateinit var tvConnectionUrl: TextView
+    private lateinit var tvResolutionDetails: TextView
     private lateinit var btnCopyUrl: Button
     private lateinit var svCameraPreview: SurfaceView
     private lateinit var btnShowPreview: Button
@@ -55,7 +59,15 @@ class WebRTCStreamFragment : DJIFragment() {
     // WebRTC
     private var webRTCStreamer: WebRTCStreamer? = null
     private var selectedCameraIndex: ComponentIndexType = ComponentIndexType.LEFT_OR_MAIN
-    private var selectedOptions: WebRTCMediaOptions = WebRTCMediaOptions.fullHD()
+    private var selectedResolutionProfile: WebRTCResolutionProfile = WebRTCResolutionProfiles.defaultProfile()
+    private var selectedOptions: WebRTCMediaOptions = selectedResolutionProfile.toMediaOptions()
+    private val resolutionButtonIds = listOf(
+        R.id.rb_webrtc_resolution_1,
+        R.id.rb_webrtc_resolution_2,
+        R.id.rb_webrtc_resolution_3,
+        R.id.rb_webrtc_resolution_4,
+        R.id.rb_webrtc_resolution_5
+    )
 
     // Camera preview
     private var previewSurface: Surface? = null
@@ -108,6 +120,7 @@ class WebRTCStreamFragment : DJIFragment() {
         tvServerPort = view.findViewById(R.id.tv_server_port)
         tvClientCount = view.findViewById(R.id.tv_client_count)
         tvConnectionUrl = view.findViewById(R.id.tv_connection_url)
+        tvResolutionDetails = view.findViewById(R.id.tv_resolution_details)
         btnCopyUrl = view.findViewById(R.id.btn_copy_url)
         svCameraPreview = view.findViewById(R.id.sv_camera_preview)
         btnShowPreview = view.findViewById(R.id.btn_show_preview)
@@ -115,6 +128,7 @@ class WebRTCStreamFragment : DJIFragment() {
         tvErrorMessage = view.findViewById(R.id.tv_error_message)
 
         tvServerPort.text = DEFAULT_PORT.toString()
+        setupResolutionOptions()
     }
 
     private fun setupListeners() {
@@ -143,17 +157,11 @@ class WebRTCStreamFragment : DJIFragment() {
         }
 
         rgResolution.setOnCheckedChangeListener { _, checkedId ->
-            selectedOptions = when (checkedId) {
-                R.id.rb_resolution_sd -> WebRTCMediaOptions.sd()
-                R.id.rb_resolution_hd -> WebRTCMediaOptions.hd()
-                R.id.rb_resolution_fullhd -> WebRTCMediaOptions.fullHD()
-                else -> WebRTCMediaOptions.fullHD()
-            }
+            selectedResolutionProfile = profileForCheckedId(checkedId) ?: return@setOnCheckedChangeListener
+            selectedOptions = selectedResolutionProfile.toMediaOptions()
+            updateResolutionDetails()
             // Apply resolution change live if server is running
-            webRTCStreamer?.changeResolution(
-                selectedOptions.videoResolutionWidth,
-                selectedOptions.videoResolutionHeight
-            )
+            webRTCStreamer?.changeMediaOptions(selectedOptions)
         }
 
         btnCopyUrl.setOnClickListener {
@@ -167,6 +175,35 @@ class WebRTCStreamFragment : DJIFragment() {
         btnHidePreview.setOnClickListener {
             hidePreview()
         }
+    }
+
+    private fun setupResolutionOptions() {
+        val profiles = WebRTCResolutionProfiles.profiles()
+        resolutionButtonIds.forEachIndexed { index, buttonId ->
+            rgResolution.findViewById<RadioButton>(buttonId)?.let { button ->
+                val profile = profiles.getOrNull(index)
+                if (profile == null) {
+                    button.visibility = View.GONE
+                } else {
+                    button.visibility = View.VISIBLE
+                    button.text = profile.rank.toString()
+                    button.tag = profile.rank
+                }
+            }
+        }
+        selectedResolutionProfile = WebRTCResolutionProfiles.defaultProfile()
+        selectedOptions = selectedResolutionProfile.toMediaOptions()
+        resolutionButtonIds.getOrNull(selectedResolutionProfile.rank - 1)?.let { rgResolution.check(it) }
+        updateResolutionDetails()
+    }
+
+    private fun profileForCheckedId(checkedId: Int): WebRTCResolutionProfile? {
+        val rank = rgResolution.findViewById<View>(checkedId)?.tag as? Int ?: return null
+        return WebRTCResolutionProfiles.profiles().firstOrNull { it.rank == rank }
+    }
+
+    private fun updateResolutionDetails() {
+        tvResolutionDetails.text = selectedResolutionProfile.detailLabel
     }
 
     private fun setupCameraPreview() {

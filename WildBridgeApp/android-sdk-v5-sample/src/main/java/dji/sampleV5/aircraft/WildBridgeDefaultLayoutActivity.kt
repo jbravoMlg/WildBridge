@@ -11,6 +11,8 @@ import java.io.File
 import android.util.Log
 import android.widget.Toast
 import android.widget.TextView
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -41,6 +43,8 @@ import dji.sampleV5.aircraft.models.BasicAircraftControlVM
 import dji.sampleV5.aircraft.models.VirtualStickVM
 import dji.sampleV5.aircraft.server.TelemetryServer
 import dji.sampleV5.aircraft.webrtc.WebRTCMediaOptions
+import dji.sampleV5.aircraft.webrtc.WebRTCResolutionProfile
+import dji.sampleV5.aircraft.webrtc.WebRTCResolutionProfiles
 import dji.sampleV5.aircraft.webrtc.WebRTCStreamer
 import dji.sampleV5.aircraft.webrtc.TelemetryProvider
 import dji.sdk.keyvalue.key.BatteryKey
@@ -138,6 +142,14 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     private var telemetryServer: TelemetryServer? = null
     private var webRTCStreamer: WebRTCStreamer? = null
     @Volatile private var lastWhipUrl: String? = null  // Remembered for FPS/Quality mode restarts
+    @Volatile private var selectedWebRTCResolutionProfile: WebRTCResolutionProfile = WebRTCResolutionProfiles.defaultProfile()
+    private val webRTCResolutionButtonIds = listOf(
+        R.id.rb_webrtc_resolution_1,
+        R.id.rb_webrtc_resolution_2,
+        R.id.rb_webrtc_resolution_3,
+        R.id.rb_webrtc_resolution_4,
+        R.id.rb_webrtc_resolution_5
+    )
     
     // Discovery (UDP broadcast/multicast)
     private var discoverySocket: DatagramSocket? = null
@@ -302,6 +314,9 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         // Setup AI Detection (AutoSensing) toggle & overlay
         setupAutoSensingToggle()
 
+        // Setup WebRTC/WHIP resolution profile selector
+        setupWebRTCResolutionSelector()
+
         // Setup drone status indicator
         setupDroneStatusView()
 
@@ -381,17 +396,40 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     // ==================== End Mode Toggle ====================
 
     private fun buildWebRTCOptions(): WebRTCMediaOptions {
-        // Conservative defaults to survive ZeroTier/Wi-Fi packet loss.
-        // 8 Mbps @ 1080p over a tunneled link causes RTP fragmentation loss
-        // ("invalid FU-A non-starting" in mediamtx) and constant reconnects.
-        // 720p @ 2 Mbps is plenty for downstream detection and is robust.
-        return WebRTCMediaOptions(
-            videoResolutionWidth = 1280,
-            videoResolutionHeight = 720,
-            fps = 15,
-            videoBitrate = 2_000_000,
-            videoCodec = "H264"
-        )
+        return selectedWebRTCResolutionProfile.toMediaOptions()
+    }
+
+    private fun setupWebRTCResolutionSelector() {
+        val group = findViewById<RadioGroup>(R.id.rg_webrtc_resolution_profile) ?: return
+        val label = findViewById<TextView>(R.id.text_webrtc_resolution_profile)
+        val profiles = WebRTCResolutionProfiles.profiles()
+
+        group.setOnCheckedChangeListener(null)
+        webRTCResolutionButtonIds.forEachIndexed { index, buttonId ->
+            group.findViewById<RadioButton>(buttonId)?.let { button ->
+                val profile = profiles.getOrNull(index)
+                if (profile == null) {
+                    button.visibility = android.view.View.GONE
+                } else {
+                    button.visibility = android.view.View.VISIBLE
+                    button.text = profile.rank.toString()
+                    button.tag = profile.rank
+                }
+            }
+        }
+
+        selectedWebRTCResolutionProfile = WebRTCResolutionProfiles.defaultProfile()
+        label?.text = selectedWebRTCResolutionProfile.detailLabel
+        webRTCResolutionButtonIds.getOrNull(selectedWebRTCResolutionProfile.rank - 1)?.let { group.check(it) }
+
+        group.setOnCheckedChangeListener { radioGroup, checkedId ->
+            val rank = radioGroup.findViewById<android.view.View>(checkedId)?.tag as? Int ?: return@setOnCheckedChangeListener
+            val profile = WebRTCResolutionProfiles.profiles().firstOrNull { it.rank == rank } ?: return@setOnCheckedChangeListener
+            selectedWebRTCResolutionProfile = profile
+            label?.text = profile.detailLabel
+            webRTCStreamer?.changeMediaOptions(profile.toMediaOptions())
+            Toast.makeText(this, profile.detailLabel, Toast.LENGTH_SHORT).show()
+        }
     }
 
     /**

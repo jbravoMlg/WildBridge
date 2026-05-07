@@ -31,6 +31,7 @@ class WebRTCStreamer(
     private val mainHandler = Handler(Looper.getMainLooper())
     private var sharedFrameSource: SharedDJIFrameSource? = null
     private var whipPublisher: WhipPublisher? = null
+    @Volatile private var currentOptions: WebRTCMediaOptions = options
     
     var listener: WebRTCStreamerListener? = null
 
@@ -152,7 +153,7 @@ class WebRTCStreamer(
         whipPublisher = WhipPublisher(
             context = context,
             videoCapturer = capturer,
-            options = options,
+            options = currentOptions,
             whipUrl = whipUrl
         ).apply {
             this.listener = object : WhipPublisher.WhipListener {
@@ -192,9 +193,20 @@ class WebRTCStreamer(
      */
     fun changeResolution(width: Int, height: Int) {
         Log.d(TAG, "Changing resolution to ${width}x${height} for ${activeConnections.size} client(s)")
+        sharedFrameSource?.changeResolution(width, height)
+        whipPublisher?.changeResolution(width, height)
         activeConnections.values.forEach { client ->
             client.changeResolution(width, height)
         }
+    }
+
+    /**
+     * Store the new media defaults for future clients and apply resolution to
+     * already-active WebRTC/WHIP capturers without reconnecting.
+     */
+    fun changeMediaOptions(options: WebRTCMediaOptions) {
+        currentOptions = options
+        changeResolution(options.videoResolutionWidth, options.videoResolutionHeight)
     }
 
     /**
@@ -221,7 +233,7 @@ class WebRTCStreamer(
             clientId = clientId,
             context = context,
             videoCapturer = videoCapturer,
-            options = options,
+            options = currentOptions,
             messageCallback = { id, message ->
                 signalingServer?.sendToClient(id, message)
             }

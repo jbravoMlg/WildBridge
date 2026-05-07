@@ -86,6 +86,11 @@ More refer to the release notes." </string>
     <string name="webrtc_resolution_sd">480p</string>
     <string name="webrtc_resolution_hd">720p</string>
     <string name="webrtc_resolution_fullhd">1080p</string>
+    <string name="webrtc_resolution_profile_1">1</string>
+    <string name="webrtc_resolution_profile_2">2</string>
+    <string name="webrtc_resolution_profile_3">3</string>
+    <string name="webrtc_resolution_profile_4">4</string>
+    <string name="webrtc_resolution_profile_5">5</string>
 
     <!-- Trajectory Recording strings -->
     <string name="item_trajectory_recording_title">Circular Trajectory</string>

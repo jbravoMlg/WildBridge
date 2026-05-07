@@ -120,10 +120,106 @@
             android:switchMinWidth="40dp"
             android:background="@drawable/uxsdk_background_black_rectangle"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintBottom_toTopOf="@+id/cb_manual_override"
+            app:layout_constraintBottom_toTopOf="@+id/layout_webrtc_resolution_profile"
             android:layout_marginStart="16dp"
             android:layout_marginBottom="4dp"
             tools:ignore="HardcodedText,UseSwitchCompatOrMaterialXml" />
+
+        <LinearLayout
+            android:id="@+id/layout_webrtc_resolution_profile"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="4dp"
+            android:background="@drawable/uxsdk_background_black_rectangle"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintBottom_toTopOf="@+id/cb_manual_override"
+            android:layout_marginStart="16dp"
+            android:layout_marginBottom="4dp">
+
+            <TextView
+                android:id="@+id/text_webrtc_resolution_profile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="#FFFFFFFF"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                tools:text="1 - DJI Mini 4 Pro: Full HD 1920x1080" />
+
+            <RadioGroup
+                android:id="@+id/rg_webrtc_resolution_profile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rb_webrtc_resolution_1"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="#FFFFFFFF"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:paddingEnd="2dp"
+                    android:text="1"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="10sp"
+                    tools:ignore="HardcodedText,TouchTargetSizeCheck" />
+
+                <RadioButton
+                    android:id="@+id/rb_webrtc_resolution_2"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="#FFFFFFFF"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:paddingEnd="2dp"
+                    android:text="2"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="10sp"
+                    tools:ignore="HardcodedText,TouchTargetSizeCheck" />
+
+                <RadioButton
+                    android:id="@+id/rb_webrtc_resolution_3"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="#FFFFFFFF"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:paddingEnd="2dp"
+                    android:text="3"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="10sp"
+                    tools:ignore="HardcodedText,TouchTargetSizeCheck" />
+
+                <RadioButton
+                    android:id="@+id/rb_webrtc_resolution_4"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="#FFFFFFFF"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:paddingEnd="2dp"
+                    android:text="4"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="10sp"
+                    tools:ignore="HardcodedText,TouchTargetSizeCheck" />
+
+                <RadioButton
+                    android:id="@+id/rb_webrtc_resolution_5"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="#FFFFFFFF"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:text="5"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="10sp"
+                    tools:ignore="HardcodedText,TouchTargetSizeCheck" />
+
+            </RadioGroup>
+
+        </LinearLayout>
 
         <!-- Autonomous / Manual mode toggle -->
         <Switch

@@ -144,34 +144,63 @@
             android:orientation="horizontal">
 
             <RadioButton
-                android:id="@+id/rb_resolution_sd"
+                android:id="@+id/rb_webrtc_resolution_1"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:buttonTint="@color/white"
-                android:text="@string/webrtc_resolution_sd"
+                android:text="@string/webrtc_resolution_profile_1"
                 android:textColor="@color/white"
                 android:textSize="11sp" />
 
             <RadioButton
-                android:id="@+id/rb_resolution_hd"
+                android:id="@+id/rb_webrtc_resolution_2"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:buttonTint="@color/white"
-                android:text="@string/webrtc_resolution_hd"
+                android:text="@string/webrtc_resolution_profile_2"
                 android:textColor="@color/white"
                 android:textSize="11sp" />
 
             <RadioButton
-                android:id="@+id/rb_resolution_fullhd"
+                android:id="@+id/rb_webrtc_resolution_3"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:buttonTint="@color/white"
-                android:checked="true"
-                android:text="@string/webrtc_resolution_fullhd"
+                android:text="@string/webrtc_resolution_profile_3"
+                android:textColor="@color/white"
+                android:textSize="11sp" />
+
+            <RadioButton
+                android:id="@+id/rb_webrtc_resolution_4"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:buttonTint="@color/white"
+                android:text="@string/webrtc_resolution_profile_4"
+                android:textColor="@color/white"
+                android:textSize="11sp" />
+
+            <RadioButton
+                android:id="@+id/rb_webrtc_resolution_5"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:buttonTint="@color/white"
+                android:text="@string/webrtc_resolution_profile_5"
                 android:textColor="@color/white"
                 android:textSize="11sp" />
 
         </RadioGroup>
+
+        <TextView
+            android:id="@+id/tv_resolution_details"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:textColor="#DDDDDD"
+            android:textSize="11sp"
+            tools:text="1 - DJI Mini 4 Pro: Full HD 1920x1080" />
 
     </LinearLayout>
 
