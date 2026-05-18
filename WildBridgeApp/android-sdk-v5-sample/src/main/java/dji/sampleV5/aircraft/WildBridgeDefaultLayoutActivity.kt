@@ -49,6 +49,7 @@ import dji.sdk.keyvalue.key.DJIKey
 import dji.sdk.keyvalue.key.FlightControllerKey
 import dji.sdk.keyvalue.key.GimbalKey
 import dji.sdk.keyvalue.key.KeyTools
+import dji.sdk.keyvalue.key.ProductKey
 import dji.sdk.keyvalue.value.common.Attitude
 import dji.sdk.keyvalue.value.common.ComponentIndexType
 import dji.sdk.keyvalue.value.common.EmptyMsg
@@ -59,6 +60,7 @@ import dji.sdk.keyvalue.value.flightcontroller.FlightMode
 import dji.sdk.keyvalue.value.flightcontroller.LowBatteryRTHInfo
 import dji.sdk.keyvalue.value.gimbal.GimbalAngleRotation
 import dji.sdk.keyvalue.value.gimbal.GimbalAngleRotationMode
+import dji.sdk.keyvalue.value.product.ProductType
 import dji.v5.et.action
 import dji.v5.et.create
 import dji.v5.et.get
@@ -270,6 +272,7 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     private val batteryKey: DJIKey<Int> = BatteryKey.KeyChargeRemainingInPercent.create()
     private val flightModeKey: DJIKey<FlightMode> = FlightControllerKey.KeyFlightMode.create()
     private val isFlyingKey: DJIKey<Boolean> = FlightControllerKey.KeyIsFlying.create()
+    private val productTypeKey: DJIKey<ProductType> = ProductKey.KeyProductType.create()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -565,6 +568,11 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     }
 
     private fun setupKeyListeners() {
+        val currentProductType = productTypeKey.get(ProductType.UNRECOGNIZED)
+        DroneController.applyDroneProfile(currentProductType.name)
+        KeyManager.getInstance().listen(productTypeKey, this) { _, newValue ->
+            DroneController.applyDroneProfile(newValue?.name ?: ProductType.UNRECOGNIZED.name)
+        }
         KeyManager.getInstance().listen(chargeRemainingKey, this) { _, newValue ->
             chargeRemainingProcessor.onNext(newValue ?: 0)
         }

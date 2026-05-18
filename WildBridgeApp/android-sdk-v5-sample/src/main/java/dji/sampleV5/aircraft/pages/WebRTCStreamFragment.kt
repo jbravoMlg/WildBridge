@@ -115,6 +115,7 @@ class WebRTCStreamFragment : DJIFragment() {
         tvErrorMessage = view.findViewById(R.id.tv_error_message)
 
         tvServerPort.text = DEFAULT_PORT.toString()
+        updateCameraOptions(listOf(ComponentIndexType.LEFT_OR_MAIN))
     }
 
     private fun setupListeners() {
@@ -193,15 +194,29 @@ class WebRTCStreamFragment : DJIFragment() {
 
     private fun updateCameraOptions(availableCameras: List<ComponentIndexType>) {
         // Update visibility of camera options based on available cameras
-        val leftRadio = rgCamera.findViewById<View>(R.id.rb_camera_left)
-        val rightRadio = rgCamera.findViewById<View>(R.id.rb_camera_right)
-        val topRadio = rgCamera.findViewById<View>(R.id.rb_camera_top)
-        val fpvRadio = rgCamera.findViewById<View>(R.id.rb_camera_fpv)
+        val cameraViews = listOf(
+            rgCamera.findViewById<View>(R.id.rb_camera_left) to ComponentIndexType.LEFT_OR_MAIN,
+            rgCamera.findViewById<View>(R.id.rb_camera_right) to ComponentIndexType.RIGHT,
+            rgCamera.findViewById<View>(R.id.rb_camera_top) to ComponentIndexType.UP,
+            rgCamera.findViewById<View>(R.id.rb_camera_fpv) to ComponentIndexType.FPV
+        )
+        var firstAvailableView: View? = null
+        var selectedCameraStillAvailable = false
 
-        leftRadio?.visibility = if (availableCameras.contains(ComponentIndexType.LEFT_OR_MAIN)) View.VISIBLE else View.GONE
-        rightRadio?.visibility = if (availableCameras.contains(ComponentIndexType.RIGHT)) View.VISIBLE else View.GONE
-        topRadio?.visibility = if (availableCameras.contains(ComponentIndexType.UP)) View.VISIBLE else View.GONE
-        fpvRadio?.visibility = if (availableCameras.contains(ComponentIndexType.FPV)) View.VISIBLE else View.GONE
+        cameraViews.forEach { (view, cameraIndex) ->
+            val isAvailable = availableCameras.contains(cameraIndex)
+            view?.visibility = if (isAvailable) View.VISIBLE else View.GONE
+            if (isAvailable && firstAvailableView == null) {
+                firstAvailableView = view
+            }
+            if (isAvailable && cameraIndex == selectedCameraIndex) {
+                selectedCameraStillAvailable = true
+            }
+        }
+
+        if (!selectedCameraStillAvailable && firstAvailableView != null) {
+            rgCamera.check(firstAvailableView!!.id)
+        }
     }
 
     @SuppressLint("SetTextI18n")

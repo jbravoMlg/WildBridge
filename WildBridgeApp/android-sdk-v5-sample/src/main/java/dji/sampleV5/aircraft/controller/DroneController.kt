@@ -2,6 +2,7 @@ package dji.sampleV5.aircraft.controller
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import dji.sampleV5.aircraft.models.BasicAircraftControlVM
 import dji.sampleV5.aircraft.models.VirtualStickVM
 import dji.v5.common.callback.CommonCallbacks
@@ -66,6 +67,112 @@ object DroneController {
     const val WP_ACCEPT_DISTANCE_M = 1.5    // horizontal distance in meters
     const val WP_ACCEPT_ALTITUDE_M = 0.5    // vertical error in meters
     const val WP_ACCEPT_YAW_DEG = 4.0       // yaw error in degrees
+
+    // From the OSA/M350 profile branch: prevent a velocity step from 0 to the
+    // saturated setpoint when virtual-stick velocity mode starts.
+    private const val MAX_HORIZONTAL_ACCEL_MPS2 = 0.5
+
+    private data class ControlProfile(
+        val name: String,
+        val acceptDistanceM: Double,
+        val acceptAltitudeM: Double,
+        val acceptYawDeg: Double,
+        val maxGotoWpSpeedMps: Double,
+        val maxPidRequestedSpeedMps: Double,
+        val distanceKp: Double,
+        val distanceKi: Double,
+        val distanceKd: Double,
+        val distanceOutputMax: Double,
+        val yawKp: Double,
+        val yawKi: Double,
+        val yawKd: Double,
+        val maxYawRateDegS: Double,
+        val trajectoryYawKp: Double,
+        val trajectoryMaxYawRateDegS: Double,
+        val defaultTrajectoryCruiseSpeedMps: Double
+    )
+
+    private val defaultProfile = ControlProfile(
+        name = "Mavic 3 Enterprise / Default",
+        acceptDistanceM = WP_ACCEPT_DISTANCE_M,
+        acceptAltitudeM = WP_ACCEPT_ALTITUDE_M,
+        acceptYawDeg = WP_ACCEPT_YAW_DEG,
+        maxGotoWpSpeedMps = 5.0,
+        maxPidRequestedSpeedMps = 15.0,
+        distanceKp = 0.65,
+        distanceKi = 0.0001,
+        distanceKd = 0.001,
+        distanceOutputMax = 15.0,
+        yawKp = 3.0,
+        yawKi = 0.0,
+        yawKd = 0.0,
+        maxYawRateDegS = 30.0,
+        trajectoryYawKp = 1.0,
+        trajectoryMaxYawRateDegS = 30.0,
+        defaultTrajectoryCruiseSpeedMps = 5.0
+    )
+
+    private val m350Profile = ControlProfile(
+        name = "Matrice 350 RTK",
+        acceptDistanceM = WP_ACCEPT_DISTANCE_M,
+        acceptAltitudeM = WP_ACCEPT_ALTITUDE_M,
+        acceptYawDeg = WP_ACCEPT_YAW_DEG,
+        maxGotoWpSpeedMps = 3.0,
+        maxPidRequestedSpeedMps = 3.0,
+        distanceKp = 0.34,
+        distanceKi = 0.0001,
+        distanceKd = 0.001,
+        distanceOutputMax = 3.0,
+        yawKp = 3.0,
+        yawKi = 0.0,
+        yawKd = 0.0,
+        maxYawRateDegS = 30.0,
+        trajectoryYawKp = 1.0,
+        trajectoryMaxYawRateDegS = 30.0,
+        defaultTrajectoryCruiseSpeedMps = 3.0
+    )
+
+    private val mini4ProProfile = ControlProfile(
+        name = "Mini 4 Pro",
+        acceptDistanceM = WP_ACCEPT_DISTANCE_M,
+        acceptAltitudeM = WP_ACCEPT_ALTITUDE_M,
+        acceptYawDeg = WP_ACCEPT_YAW_DEG,
+        maxGotoWpSpeedMps = 5.0,
+        maxPidRequestedSpeedMps = 15.0,
+        distanceKp = 0.65,
+        distanceKi = 0.0001,
+        distanceKd = 0.001,
+        distanceOutputMax = 15.0,
+        yawKp = 3.0,
+        yawKi = 0.0,
+        yawKd = 0.0,
+        maxYawRateDegS = 30.0,
+        trajectoryYawKp = 1.0,
+        trajectoryMaxYawRateDegS = 30.0,
+        defaultTrajectoryCruiseSpeedMps = 2.0
+    )
+
+    @Volatile
+    private var controlProfile: ControlProfile = defaultProfile
+
+    fun applyDroneProfile(productTypeName: String?): String {
+        val normalized = productTypeName.orEmpty().uppercase(Locale.ROOT)
+        val selectedProfile = when {
+            normalized.contains("M350") || normalized.contains("MATRICE_350") || normalized.contains("MATRICE350") -> m350Profile
+            normalized.contains("MINI_4") || normalized.contains("MINI4") || normalized.contains("DJI_MINI_4") -> mini4ProProfile
+            normalized.contains("MAVIC_3") || normalized.contains("MAVIC3") || normalized.contains("M3E") || normalized.contains("WM265") -> defaultProfile
+            else -> defaultProfile
+        }
+
+        if (selectedProfile != controlProfile) {
+            controlProfile = selectedProfile
+            Log.i("DroneController", "Applied control profile '${selectedProfile.name}' for productType='$productTypeName'")
+            ToastUtils.showToast("Control profile: ${selectedProfile.name}")
+        }
+        return selectedProfile.name
+    }
+
+    fun getActiveDroneProfileName(): String = controlProfile.name
 
     // Listener interface so the UI can react to automatic activation
     interface ManualOverrideListener {
@@ -533,14 +640,15 @@ object DroneController {
 
     fun gotoYaw(targetYaw: Double) {
         stopCurrentMission()
+        val profile = controlProfile
         // Start new control loop session
         val loopId = startNewControlLoopSession()
         
         _isYawReached = false
         val controlLoopYaw = Handler(Looper.getMainLooper())
         val updateInterval = 100.0 // Update every 100 ms
-        val maxYawRate = 30.0 // degrees per second
-        val yawPID = PID(3.0, 0.0, 0.0, updateInterval/1000, -maxYawRate to maxYawRate)
+        val maxYawRate = profile.maxYawRateDegS // degrees per second
+        val yawPID = PID(profile.yawKp, profile.yawKi, profile.yawKd, updateInterval/1000, -maxYawRate to maxYawRate)
 
         virtualStickVM?.enableVirtualStickAdvancedMode()
         // Enable Virtual Stick and advanced mode
@@ -693,6 +801,8 @@ object DroneController {
         })
         virtualStickVM?.enableVirtualStickAdvancedMode()
 
+        var lastCommandedSpeed = 0f
+
         val runnable = object : Runnable {
             override fun run() {
                 // CHECK IF WE SHOULD STILL BE RUNNING
@@ -711,7 +821,8 @@ object DroneController {
 
                 val altError = targetAltitude - currentPosition.altitude
 
-                if (distanceToWaypoint < WP_ACCEPT_DISTANCE_M && abs(altError) < WP_ACCEPT_ALTITUDE_M) {
+                val profile = controlProfile
+                if (distanceToWaypoint < profile.acceptDistanceM && abs(altError) < profile.acceptAltitudeM) {
                     setStick(0F, 0F, 0F, 0F)
                     _isWaypointReached = true
                     controlLoopEnabled = false
@@ -738,7 +849,7 @@ object DroneController {
                 val yawControl = adjustedDesiredYaw
 
                 // Compute forward speed proportional to the distance to the waypoint
-                val maxSpeed = 5f // Maximum speed in m/s
+                val maxSpeed = controlProfile.maxGotoWpSpeedMps.toFloat() // Maximum speed in m/s
                 val kp = 0.5f // Proportional gain
 
                 var speed = (kp * distanceToWaypoint).toFloat()
@@ -751,6 +862,10 @@ object DroneController {
                 val maxYawError = 15f // degrees
                 val yawErrorFactor = max(0f, 1f - (abs(yawError) / maxYawError).toFloat())
                 speed *= yawErrorFactor
+
+                val maxSpeedStep = (MAX_HORIZONTAL_ACCEL_MPS2 * (updateInterval / 1000.0)).toFloat()
+                speed = speed.coerceAtMost(lastCommandedSpeed + maxSpeedStep)
+                lastCommandedSpeed = speed
 
                 val forwardSpeed = speed.toDouble()
                 val lateralSpeed = 0.0 // No lateral movement
@@ -783,7 +898,8 @@ object DroneController {
     }
 
     fun navigateToWaypointWithPID(targetLatitude: Double, targetLongitude: Double, targetAlt: Double, targetYaw: Double, maxSpeed: Double) {
-        val newTarget = WaypointTarget(targetLatitude, targetLongitude, targetAlt, targetYaw, maxSpeed)
+        val profile = controlProfile
+        val newTarget = WaypointTarget(targetLatitude, targetLongitude, targetAlt, targetYaw, maxSpeed.coerceIn(0.2, profile.maxPidRequestedSpeedMps))
         _isWaypointReached = false
 
         // If a PID loop is already running, just hot-swap the target.
@@ -802,7 +918,7 @@ object DroneController {
         activeWaypointTarget = newTarget
 
         val updateInterval = 100.0  // Update every 100 ms
-        val maxYawRate = 30.0 // degrees per second
+        val maxYawRate = profile.maxYawRateDegS // degrees per second
 
         virtualStickVM?.enableVirtualStickAdvancedMode()
         // NOTE: Use VM directly, not enableVirtualStick() which would cancel the loop we just started
@@ -815,8 +931,8 @@ object DroneController {
         virtualStickVM?.enableVirtualStickAdvancedMode()
 
         // PID upper bound is generous (15 m/s); actual speed is clamped per-tick to target.maxSpeed
-        val distancePID = PID(0.65, 0.0001, 0.001, updateInterval/1000, 0.0 to 15.0)
-        val yawPID = PID(3.0, 0.0000, 0.00, updateInterval/1000, -maxYawRate to maxYawRate)
+        val distancePID = PID(profile.distanceKp, profile.distanceKi, profile.distanceKd, updateInterval/1000, 0.0 to profile.distanceOutputMax)
+        val yawPID = PID(profile.yawKp, profile.yawKi, profile.yawKd, updateInterval/1000, -maxYawRate to maxYawRate)
 
         val controlLoop = Handler(Looper.getMainLooper())
         virtualStickVM?.enableVirtualStickAdvancedMode()
@@ -825,6 +941,7 @@ object DroneController {
         // to allow the bridge to hot-swap the next target without a cold restart.
         val holdCooldownMs = 200L
         var reachedAtMs = 0L  // SystemClock.elapsedRealtime() when waypoint was first reached, 0 = not reached
+        var lastCommandedSpeed = 0.0
 
         val runnable = object : Runnable {
             override fun run() {
@@ -847,7 +964,10 @@ object DroneController {
                 val currentYaw = getHeading()
 
                 val distance = calculateDistance(target.latitude, target.longitude, currentPosition.latitude, currentPosition.longitude)
-                val targetSpeed = distancePID.update(distance).coerceAtMost(target.maxSpeed)
+                val pidSpeed = distancePID.update(distance).coerceAtMost(target.maxSpeed)
+                val maxSpeedStep = MAX_HORIZONTAL_ACCEL_MPS2 * (updateInterval / 1000.0)
+                val targetSpeed = pidSpeed.coerceAtMost(lastCommandedSpeed + maxSpeedStep)
+                lastCommandedSpeed = targetSpeed
                 val movementDirection = calculateBearing(currentPosition.latitude, currentPosition.longitude, target.latitude, target.longitude).toDouble()
 
                 val yawError = normalizeAngle(target.yaw - currentYaw)
@@ -859,7 +979,7 @@ object DroneController {
 
                 val altError = target.altitude - currentPosition.altitude
 
-                if (distance < WP_ACCEPT_DISTANCE_M && abs(yawError) < WP_ACCEPT_YAW_DEG && abs(altError) < WP_ACCEPT_ALTITUDE_M) {
+                if (distance < profile.acceptDistanceM && abs(yawError) < profile.acceptYawDeg && abs(altError) < profile.acceptAltitudeM) {
                     val now = android.os.SystemClock.elapsedRealtime()
                     if (!_isWaypointReached) {
                         _isWaypointReached = true
@@ -906,12 +1026,14 @@ object DroneController {
     fun navigateTrajectory(
         waypoints: List<Triple<Double, Double, Double>>,
         lookaheadDistance: Double = 5.5,
-        cruiseSpeed: Double = 5.0,
+        cruiseSpeed: Double = Double.NaN,
         minSpeedFinal: Double = 1.0,
         slowdownRadius: Double = 4.0
     ) {
         stopCurrentMission()
         if (waypoints.size < 2) return
+        val profile = controlProfile
+        val effectiveCruiseSpeed = if (cruiseSpeed.isNaN()) profile.defaultTrajectoryCruiseSpeedMps else cruiseSpeed
         
         // Start new control loop session
         val loopId = startNewControlLoopSession()
@@ -933,6 +1055,7 @@ object DroneController {
         })
         virtualStickVM?.enableVirtualStickAdvancedMode()
         val controlLoop = Handler(Looper.getMainLooper())
+        var lastCommandedSpeed = 0.0
 
         // Helper: Compute great-circle distance (meters) between two lat/lon
         fun calculateDistance(latA: Double, lonA: Double, latB: Double, lonB: Double): Double {
@@ -1022,30 +1145,34 @@ object DroneController {
                 // --- Yaw Control: P controller for angular velocity ---
                 val targetYaw = calculateBearing(current.latitude, current.longitude, lookahead.first, lookahead.second)
                 val yawError = normalizeAngle(targetYaw - currentYaw)
-                val Kp_yaw = 1.0 // Tune as needed; 1.0 = 1 deg/s per deg error
-                val maxYawRate = 30.0 // degrees/sec, DJI safe max
+                val Kp_yaw = profile.trajectoryYawKp
+                val maxYawRate = profile.trajectoryMaxYawRateDegS // degrees/sec
                 val targetYawRate = (Kp_yaw * yawError).coerceIn(-maxYawRate, maxYawRate)
 
                 // Move toward lookahead
                 val moveDir = targetYaw
                 val moveDirRel = normalizeAngle(moveDir - currentYaw)
-                var targetSpeed = cruiseSpeed
+                var targetSpeed = effectiveCruiseSpeed
 
                 // Last segment: slow down as you approach the last waypoint
                 val isLastSegment = idxB == waypoints.lastIndex
                 if (isLastSegment) {
                     val distToEnd = calculateDistance(current.latitude, current.longitude, end.first, end.second)
                     if (distToEnd < slowdownRadius)
-                        targetSpeed = minSpeedFinal + (cruiseSpeed - minSpeedFinal) * (distToEnd / slowdownRadius)
+                        targetSpeed = minSpeedFinal + (effectiveCruiseSpeed - minSpeedFinal) * (distToEnd / slowdownRadius)
                 }
+
+                val maxSpeedStep = MAX_HORIZONTAL_ACCEL_MPS2 * (updateIntervalMs / 1000.0)
+                targetSpeed = targetSpeed.coerceAtMost(lastCommandedSpeed + maxSpeedStep)
+                lastCommandedSpeed = targetSpeed
 
                 val forwardSpeed = targetSpeed * cos(Math.toRadians(moveDirRel))
                 val lateralSpeed = targetSpeed * sin(Math.toRadians(moveDirRel))
 
                 // Stop criteria: last segment, close to endpoint, and altitude close
                 val reached = isLastSegment &&
-                        (calculateDistance(current.latitude, current.longitude, end.first, end.second) < WP_ACCEPT_DISTANCE_M) &&
-                        (abs(targetAlt - current.altitude) < WP_ACCEPT_ALTITUDE_M)
+                        (calculateDistance(current.latitude, current.longitude, end.first, end.second) < profile.acceptDistanceM) &&
+                        (abs(targetAlt - current.altitude) < profile.acceptAltitudeM)
 
                 if (reached) {
                     setStick(0F, 0F, 0F, 0F)
