@@ -36,15 +36,31 @@ TASK_NAME="assemble${VARIANT^}Debug"
 APK_PATH="$ROOT_DIR/../android-sdk-v5-sample/build/outputs/apk/$VARIANT/debug/sample-${VARIANT}Debug.apk"
 LAUNCH_ACTIVITY="dji.sampleV5.aircraft.DJIAircraftMainActivity"
 
+use_android_sdk() {
+  export ANDROID_HOME="$1"
+  export ANDROID_SDK_ROOT="$1"
+  export PATH="$1/platform-tools:$PATH"
+}
+
 ensure_android_sdk_configured() {
   if [[ -n "${ANDROID_HOME:-}" && -d "$ANDROID_HOME" ]]; then
+    use_android_sdk "$ANDROID_HOME"
     return
   fi
   if [[ -n "${ANDROID_SDK_ROOT:-}" && -d "$ANDROID_SDK_ROOT" ]]; then
+    use_android_sdk "$ANDROID_SDK_ROOT"
     return
   fi
   if [[ -f "$ROOT_DIR/local.properties" ]] && grep -q '^sdk\.dir=' "$ROOT_DIR/local.properties"; then
-    return
+    sdk_dir="$(grep -m1 '^sdk\.dir=' "$ROOT_DIR/local.properties" | cut -d= -f2- | tr -d '\r')"
+    if [[ -d "$sdk_dir" ]]; then
+      use_android_sdk "$sdk_dir"
+      return
+    fi
+
+    echo "Android SDK location in $ROOT_DIR/local.properties does not exist: $sdk_dir" >&2
+    echo "Set sdk.dir to the actual SDK path, or export ANDROID_HOME=/path/to/Android/Sdk." >&2
+    exit 1
   fi
 
   echo "Android SDK location not configured." >&2
@@ -55,8 +71,29 @@ ensure_android_sdk_configured() {
   exit 1
 }
 
+ensure_java_compiler_configured() {
+  if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/javac" ]]; then
+    return
+  fi
+  if command -v javac >/dev/null 2>&1; then
+    return
+  fi
+
+  local_jdk="$HOME/.jdks/temurin-21"
+  if [[ -x "$local_jdk/bin/javac" ]]; then
+    export JAVA_HOME="$local_jdk"
+    export PATH="$JAVA_HOME/bin:$PATH"
+    return
+  fi
+
+  echo "Java compiler not found. Install a JDK or set JAVA_HOME to a JDK directory." >&2
+  echo "Current Java runtime: $(command -v java || echo not found)" >&2
+  exit 1
+}
+
 build_selected_variant() {
   ensure_android_sdk_configured
+  ensure_java_compiler_configured
   "$ROOT_DIR/gradlew" -p "$ROOT_DIR" ":sample:$TASK_NAME" --warning-mode summary
 }
 
@@ -90,6 +127,8 @@ if [[ -z "$APK_PATH" || ! -f "$APK_PATH" ]]; then
   echo "Expected under: $ROOT_DIR/../android-sdk-v5-sample/build/outputs/apk/$VARIANT" >&2
   exit 1
 fi
+
+ensure_android_sdk_configured
 
 echo "Waiting for a DJI RC / Android device over ADB..."
 adb wait-for-device
