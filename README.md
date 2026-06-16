@@ -127,13 +127,15 @@ Command-line build:
 
 ```bash
 cd WildBridge/WildBridgeApp/android-sdk-v5-as
-./gradlew :sample:assembleDebug
+./gradlew :sample:assembleCurrentDebug
+./gradlew :sample:assembleDemoBiomassDebug
 ```
 
-The debug APK is written to:
+The debug APKs are written to:
 
 ```text
-WildBridgeApp/android-sdk-v5-sample/build/outputs/apk/debug/sample-debug.apk
+WildBridgeApp/android-sdk-v5-sample/build/outputs/apk/current/debug/sample-currentDebug.apk
+WildBridgeApp/android-sdk-v5-sample/build/outputs/apk/demoBiomass/debug/sample-demoBiomassDebug.apk
 ```
 
 ### Start the Server
@@ -624,8 +626,9 @@ DJI SDK TXT flight records are copied to `WildBridge/DJI_FlightRecords/` on app 
 **Android build:**
 ```bash
 cd WildBridgeApp/android-sdk-v5-as
-./gradlew :sample:compileDebugKotlin
-./gradlew :sample:assembleDebug
+./gradlew :sample:compileCurrentDebugKotlin
+./gradlew :sample:assembleCurrentDebug
+./gradlew :sample:assembleDemoBiomassDebug
 ```
 
 ---

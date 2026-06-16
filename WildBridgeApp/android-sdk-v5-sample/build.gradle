@@ -59,9 +59,23 @@ android {
         manifestPlaceholders["API_KEY"] = aircraftApiKey
         manifestPlaceholders["GMAP_API_KEY"] = gmapApiKey
         manifestPlaceholders["MAPLIBRE_TOKEN"] = maplibreToken
+        manifestPlaceholders["APP_ICON"] = "@mipmap/ic_main"
         ndk {
             //noinspection ChromeOsAbiSupport
             abiFilters 'arm64-v8a'
+        }
+    }
+
+    flavorDimensions "appVariant"
+    productFlavors {
+        current {
+            dimension "appVariant"
+        }
+        demoBiomass {
+            dimension "appVariant"
+            applicationIdSuffix ".demo_biomass"
+            versionNameSuffix "-demo_biomass"
+            manifestPlaceholders["APP_ICON"] = "@mipmap/ic_main_demo_biomass"
         }
     }
 

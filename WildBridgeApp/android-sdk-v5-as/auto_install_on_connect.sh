@@ -2,17 +2,43 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APK_PATH="$ROOT_DIR/../android-sdk-v5-sample/build/outputs/apk/debug/sample-debug.apk"
-PACKAGE_NAME="com.dji.sampleV5.aircraft"
+VARIANT="current"
+BUILD=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --build)
+      BUILD=true
+      ;;
+    current)
+      VARIANT="current"
+      ;;
+    demoBiomass|demo_biomass)
+      VARIANT="demoBiomass"
+      ;;
+    *)
+      echo "Usage: $0 [current|demoBiomass|demo_biomass] [--build]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$VARIANT" == "demoBiomass" ]]; then
+  PACKAGE_NAME="com.dji.sampleV5.aircraft.demo_biomass"
+else
+  PACKAGE_NAME="com.dji.sampleV5.aircraft"
+fi
+TASK_NAME="assemble${VARIANT^}Debug"
+APK_PATH="$ROOT_DIR/../android-sdk-v5-sample/build/outputs/apk/$VARIANT/debug/sample-${VARIANT}Debug.apk"
 LAUNCH_ACTIVITY="dji.sampleV5.aircraft.DJIAircraftMainActivity"
 
-if [[ "${1:-}" == "--build" ]]; then
-  "$ROOT_DIR/gradlew" -p "$ROOT_DIR" :sample:assembleDebug --warning-mode summary
+if [[ "$BUILD" == true ]]; then
+  "$ROOT_DIR/gradlew" -p "$ROOT_DIR" ":sample:$TASK_NAME" --warning-mode summary
 fi
 
 if [[ ! -f "$APK_PATH" ]]; then
   echo "APK not found: $APK_PATH" >&2
-  echo "Run: $0 --build" >&2
+  echo "Run: $0 $VARIANT --build" >&2
   exit 1
 fi
 
@@ -24,7 +50,7 @@ model="$(adb shell getprop ro.product.model 2>/dev/null | tr -d '\r' || true)"
 product="$(adb shell getprop ro.product.product.name 2>/dev/null | tr -d '\r' || true)"
 
 echo "Device detected: serial=${serial:-unknown} model=${model:-unknown} product=${product:-unknown}"
-echo "Installing: $APK_PATH"
+echo "Installing $VARIANT: $APK_PATH"
 adb install -r "$APK_PATH"
 
 echo "Launching $PACKAGE_NAME"
