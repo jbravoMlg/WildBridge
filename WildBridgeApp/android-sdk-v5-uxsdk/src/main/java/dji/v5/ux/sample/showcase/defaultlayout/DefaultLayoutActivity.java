@@ -109,7 +109,6 @@ public class DefaultLayoutActivity extends AppCompatActivity {
     protected FocalZoomWidget focalZoomWidget;
     protected SettingWidget settingWidget;
     protected MapWidget mapWidget;
-    protected View mapTapOverlay;
     protected TopBarPanelWidget topBarPanel;
     protected ConstraintLayout fpvParentView;
     private DrawerLayout mDrawerLayout;
@@ -120,11 +119,6 @@ public class DefaultLayoutActivity extends AppCompatActivity {
 
 
     private CompositeDisposable compositeDisposable;
-    private boolean mapExpanded = false;
-    private ConstraintLayout.LayoutParams normalFpvHolderParams;
-    private ConstraintLayout.LayoutParams normalMapParams;
-    private ConstraintLayout.LayoutParams normalMapTapOverlayParams;
-    private int secondaryFpvVisibilityBeforeMapExpansion = View.GONE;
     private final DataProcessor<CameraSource> cameraSourceProcessor = DataProcessor.create(new CameraSource(ComponentIndexType.UNKNOWN,
             CameraLensType.UNKNOWN));
     private final IDJINetworkStatusListener networkStatusListener = isNetworkAvailable -> {
@@ -174,10 +168,6 @@ public class DefaultLayoutActivity extends AppCompatActivity {
         gimbalAdjustDone = findViewById(R.id.fpv_gimbal_ok_btn);
         gimbalFineTuneWidget = findViewById(R.id.setting_menu_gimbal_fine_tune);
         mapWidget = findViewById(R.id.widget_map);
-        mapTapOverlay = findViewById(R.id.widget_map_tap_overlay);
-        normalFpvHolderParams = copyConstraintLayoutParams(fpvParentView);
-        normalMapParams = copyConstraintLayoutParams(mapWidget);
-        normalMapTapOverlayParams = copyConstraintLayoutParams(mapTapOverlay);
 
         initClickListener();
         MediaDataCenter.getInstance().getCameraStreamManager().addAvailableCameraUpdatedListener(availableCameraUpdatedListener);
@@ -214,15 +204,6 @@ public class DefaultLayoutActivity extends AppCompatActivity {
 
     private void initClickListener() {
         secondaryFPVWidget.setOnClickListener(v -> swapVideoSource());
-        primaryFpvWidget.setOnClickListener(v -> {
-            if (mapExpanded) {
-                setMapExpanded(false);
-            }
-        });
-
-        if (mapTapOverlay != null) {
-            mapTapOverlay.setOnClickListener(v -> setMapExpanded(true));
-        }
 
         if (settingWidget != null) {
             settingWidget.setOnClickListener(v -> toggleRightDrawer());
@@ -245,98 +226,6 @@ public class DefaultLayoutActivity extends AppCompatActivity {
             }
 
         });
-    }
-
-    private ConstraintLayout.LayoutParams copyConstraintLayoutParams(View view) {
-        return new ConstraintLayout.LayoutParams((ConstraintLayout.LayoutParams) view.getLayoutParams());
-    }
-
-    private int dpToPx(int dp) {
-        return Math.round(dp * getResources().getDisplayMetrics().density);
-    }
-
-    private void bringPersistentHudToFront() {
-        int[] hudViewIds = {
-                R.id.panel_top_bar,
-                R.id.widget_remaining_flight_time,
-                R.id.sw_auto_sensing,
-                R.id.cb_manual_override,
-                R.id.text_drone_name,
-                R.id.text_drone_status,
-                R.id.text_altitude,
-                R.id.text_satellite_count,
-                R.id.widget_take_off,
-                R.id.widget_return_to_home,
-                R.id.widget_lens_control,
-                R.id.panel_ndvi_camera,
-                R.id.panel_visual_camera,
-                R.id.widget_auto_exposure_lock,
-                R.id.widget_focus_mode,
-                R.id.widget_focus_exposure_switch,
-                R.id.widget_camera_controls,
-                R.id.widget_focal_zoom,
-                R.id.widget_horizontal_situation_indicator,
-                R.id.setting_menu_gimbal_fine_tune,
-                R.id.fpv_gimbal_ok_btn,
-                R.id.widget_fpv_flight_display_widget,
-                R.id.widget_simulator_control,
-                R.id.widget_panel_system_status_list
-        };
-        for (int id : hudViewIds) {
-            View view = findViewById(id);
-            if (view != null) {
-                view.bringToFront();
-            }
-        }
-    }
-
-    private void setMapExpanded(boolean expanded) {
-        if (mapExpanded == expanded) {
-            return;
-        }
-
-        mapExpanded = expanded;
-        if (expanded) {
-            secondaryFpvVisibilityBeforeMapExpansion = secondaryFPVWidget.getVisibility();
-
-            ConstraintLayout.LayoutParams mapParams = new ConstraintLayout.LayoutParams(0, 0);
-            mapParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID;
-            mapParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID;
-            mapParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
-            mapParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID;
-            mapWidget.setLayoutParams(mapParams);
-
-            ConstraintLayout.LayoutParams fpvParams = new ConstraintLayout.LayoutParams(
-                    getResources().getDimensionPixelSize(R.dimen.uxsdk_mini_map_width),
-                    getResources().getDimensionPixelSize(R.dimen.uxsdk_mini_map_height));
-            fpvParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID;
-            fpvParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID;
-            fpvParams.setMargins(0, 0, dpToPx(12), dpToPx(12));
-            fpvParentView.setLayoutParams(fpvParams);
-
-            secondaryFPVWidget.setVisibility(View.GONE);
-            fpvInteractionWidget.setInteractionEnabled(false);
-            if (mapTapOverlay != null) {
-                mapTapOverlay.setVisibility(View.GONE);
-            }
-
-            mapWidget.bringToFront();
-            fpvParentView.bringToFront();
-            bringPersistentHudToFront();
-            return;
-        }
-
-        fpvParentView.setLayoutParams(new ConstraintLayout.LayoutParams(normalFpvHolderParams));
-        mapWidget.setLayoutParams(new ConstraintLayout.LayoutParams(normalMapParams));
-        mapWidget.bringToFront();
-        if (mapTapOverlay != null) {
-            mapTapOverlay.setLayoutParams(new ConstraintLayout.LayoutParams(normalMapTapOverlayParams));
-            mapTapOverlay.setVisibility(View.VISIBLE);
-            mapTapOverlay.bringToFront();
-        }
-        bringPersistentHudToFront();
-        secondaryFPVWidget.setVisibility(secondaryFpvVisibilityBeforeMapExpansion);
-        updateInteractionEnabled();
     }
 
     private void toggleRightDrawer() {
