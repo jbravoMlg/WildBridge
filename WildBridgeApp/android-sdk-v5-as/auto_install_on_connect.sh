@@ -4,11 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VARIANT="current"
 BUILD=false
+CHECK_ONLY=false
 
 for arg in "$@"; do
   case "$arg" in
     --build)
       BUILD=true
+      ;;
+    --check)
+      CHECK_ONLY=true
       ;;
     current)
       VARIANT="current"
@@ -17,7 +21,7 @@ for arg in "$@"; do
       VARIANT="demoBiomass"
       ;;
     *)
-      echo "Usage: $0 [current|demoBiomass|demo_biomass] [--build]" >&2
+      echo "Usage: $0 [current|demoBiomass|demo_biomass] [--build] [--check]" >&2
       exit 1
       ;;
   esac
@@ -32,14 +36,34 @@ TASK_NAME="assemble${VARIANT^}Debug"
 APK_PATH="$ROOT_DIR/../android-sdk-v5-sample/build/outputs/apk/$VARIANT/debug/sample-${VARIANT}Debug.apk"
 LAUNCH_ACTIVITY="dji.sampleV5.aircraft.DJIAircraftMainActivity"
 
-if [[ "$BUILD" == true ]]; then
+build_selected_variant() {
   "$ROOT_DIR/gradlew" -p "$ROOT_DIR" ":sample:$TASK_NAME" --warning-mode summary
+}
+
+if [[ "$BUILD" == true ]]; then
+  build_selected_variant
 fi
 
 if [[ ! -f "$APK_PATH" ]]; then
-  echo "APK not found: $APK_PATH" >&2
-  echo "Run: $0 $VARIANT --build" >&2
+  echo "APK not found, building $VARIANT first: $APK_PATH" >&2
+  build_selected_variant
+fi
+
+if [[ ! -f "$APK_PATH" ]]; then
+  APK_PATH="$(find "$ROOT_DIR/../android-sdk-v5-sample/build/outputs/apk/$VARIANT" -type f -name "sample-${VARIANT}Debug.apk" -print -quit 2>/dev/null || true)"
+fi
+
+if [[ -z "$APK_PATH" || ! -f "$APK_PATH" ]]; then
+  echo "APK not found after build for variant: $VARIANT" >&2
+  echo "Expected under: $ROOT_DIR/../android-sdk-v5-sample/build/outputs/apk/$VARIANT" >&2
   exit 1
+fi
+
+if [[ "$CHECK_ONLY" == true ]]; then
+  echo "Variant: $VARIANT"
+  echo "Package: $PACKAGE_NAME"
+  echo "APK: $APK_PATH"
+  exit 0
 fi
 
 echo "Waiting for a DJI RC / Android device over ADB..."
