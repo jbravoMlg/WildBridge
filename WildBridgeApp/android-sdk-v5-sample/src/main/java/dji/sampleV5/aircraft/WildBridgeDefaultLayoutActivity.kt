@@ -114,6 +114,7 @@ import dji.v5.et.get
 import dji.v5.et.set
 import dji.v5.manager.KeyManager
 import dji.v5.ux.core.util.DataProcessor
+import dji.v5.ux.map.MapWidget
 import dji.v5.ux.sample.showcase.defaultlayout.DefaultLayoutActivity
 import dji.v5.manager.intelligent.AutoSensingInfo
 import dji.v5.manager.intelligent.AutoSensingInfoListener
@@ -772,17 +773,15 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         val button = findViewById<ToggleButton>(R.id.button_map_expand)
         val compactWidth = resources.getDimensionPixelSize(R.dimen.uxsdk_150_dp)
         val compactHeight = resources.getDimensionPixelSize(R.dimen.uxsdk_100_dp)
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
         val width = if (expanded) {
-            (resources.displayMetrics.widthPixels * 0.46f).toInt()
-                .coerceAtLeast(dpToPx(320))
-                .coerceAtMost(resources.displayMetrics.widthPixels - dpToPx(24))
+            (screenWidth - dpToPx(24)).coerceAtLeast(compactWidth)
         } else {
             compactWidth
         }
         val height = if (expanded) {
-            (resources.displayMetrics.heightPixels * 0.44f).toInt()
-                .coerceAtLeast(dpToPx(220))
-                .coerceAtMost(resources.displayMetrics.heightPixels - dpToPx(96))
+            (screenHeight - dpToPx(96)).coerceAtLeast(compactHeight)
         } else {
             compactHeight
         }
@@ -790,6 +789,10 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
             this.width = width
             this.height = height
         }
+        mapWidget.setMapCenterLock(if (expanded) MapWidget.MapCenterLock.NONE else MapWidget.MapCenterLock.AIRCRAFT)
+        mapWidget.setAutoFrameMapEnabled(false)
+        mapWidget.bringToFront()
+        button?.bringToFront()
         button?.contentDescription = if (expanded) "Minimize map" else "Expand map"
         mapWidget.requestLayout()
     }
