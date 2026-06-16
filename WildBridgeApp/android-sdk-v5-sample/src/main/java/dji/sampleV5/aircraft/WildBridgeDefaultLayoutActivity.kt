@@ -306,6 +306,8 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     
     private var phoneHeading: Double = 0.0
     private var phonePressure: Float = 0.0f
+    @Volatile private var latestAltitudeMetres: Double = 0.0
+    @Volatile private var latestGimbalPitchDegrees: Double = 0.0
     
     private val accelerometerReading = FloatArray(3)
     private val magnetometerReading = FloatArray(3)
@@ -2151,8 +2153,9 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
         }.start()
     }
 
-    private fun updateAltitudeView(altitudeMetres: Double) {
-        findViewById<TextView>(R.id.text_altitude)?.text = "ALT ${altitudeMetres.toInt()}m"
+    private fun updateAltitudeView() {
+        findViewById<TextView>(R.id.text_altitude)?.text =
+            "ALT ${latestAltitudeMetres.toInt()}m  GIM ${latestGimbalPitchDegrees.toInt()}°"
     }
 
     private fun setupDroneNameDisplay() {
@@ -2279,7 +2282,13 @@ class WildBridgeDefaultLayoutActivity : DefaultLayoutActivity() {
     private fun setupTelemetryListeners() {
         // Keep altitude display in sync with every position update
         KeyManager.getInstance().listen(location3DKey, this) { _, newValue ->
-            mainHandler.post { updateAltitudeView(newValue?.altitude ?: 0.0) }
+            latestAltitudeMetres = newValue?.altitude ?: 0.0
+            mainHandler.post { updateAltitudeView() }
+            rebuildTelemetryCache()
+        }
+        KeyManager.getInstance().listen(gimbalAttitudeKey, this) { _, newValue ->
+            latestGimbalPitchDegrees = newValue?.pitch ?: 0.0
+            mainHandler.post { updateAltitudeView() }
             rebuildTelemetryCache()
         }
         // High-frequency keys: rebuild cache on every SDK push

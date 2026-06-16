@@ -40,6 +40,7 @@ android {
         return project.findProperty(key)?.toString()?.trim() ?: ""
     }
     def aircraftApiKey = resolveSecret("AIRCRAFT_API_KEY")
+    def demoBiomassAircraftApiKey = resolveSecret("AIRCRAFT_API_KEY_DEMO_BIOMASS") ?: aircraftApiKey
     def gmapApiKey = resolveSecret("GMAP_API_KEY")
     def maplibreToken = resolveSecret("MAPLIBRE_TOKEN")
 
@@ -75,6 +76,7 @@ android {
             dimension "appVariant"
             applicationIdSuffix ".demo_biomass"
             versionNameSuffix "-demo_biomass"
+            manifestPlaceholders["API_KEY"] = demoBiomassAircraftApiKey
             manifestPlaceholders["APP_ICON"] = "@mipmap/ic_main_demo_biomass"
         }
     }

@@ -6,6 +6,8 @@ sdk.dir=/home/your-user/Android/Sdk
 
 # Required by DJI Mobile SDK. Use the key registered for this app package/signature.
 AIRCRAFT_API_KEY=Your_DJI_App_Key
+# Optional: use a separate key for the demoBiomass flavor package/signature.
+AIRCRAFT_API_KEY_DEMO_BIOMASS=Your_DJI_Demo_Biomass_App_Key
 
 # Optional for OpenFreeMap/MapLibre rendering in this project; dummy is enough for SDK init.
 MAPLIBRE_TOKEN=dummy
