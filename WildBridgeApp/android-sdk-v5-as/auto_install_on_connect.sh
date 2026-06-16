@@ -36,9 +36,41 @@ TASK_NAME="assemble${VARIANT^}Debug"
 APK_PATH="$ROOT_DIR/../android-sdk-v5-sample/build/outputs/apk/$VARIANT/debug/sample-${VARIANT}Debug.apk"
 LAUNCH_ACTIVITY="dji.sampleV5.aircraft.DJIAircraftMainActivity"
 
+ensure_android_sdk_configured() {
+  if [[ -n "${ANDROID_HOME:-}" && -d "$ANDROID_HOME" ]]; then
+    return
+  fi
+  if [[ -n "${ANDROID_SDK_ROOT:-}" && -d "$ANDROID_SDK_ROOT" ]]; then
+    return
+  fi
+  if [[ -f "$ROOT_DIR/local.properties" ]] && grep -q '^sdk\.dir=' "$ROOT_DIR/local.properties"; then
+    return
+  fi
+
+  echo "Android SDK location not configured." >&2
+  echo "Create $ROOT_DIR/local.properties with a valid sdk.dir, for example:" >&2
+  echo "  sdk.dir=$HOME/Android/Sdk" >&2
+  echo "Or export ANDROID_HOME=/path/to/Android/Sdk before running this script." >&2
+  echo "Template: $ROOT_DIR/local.properties.example" >&2
+  exit 1
+}
+
 build_selected_variant() {
+  ensure_android_sdk_configured
   "$ROOT_DIR/gradlew" -p "$ROOT_DIR" ":sample:$TASK_NAME" --warning-mode summary
 }
+
+if [[ "$CHECK_ONLY" == true ]]; then
+  echo "Variant: $VARIANT"
+  echo "Package: $PACKAGE_NAME"
+  echo "APK: $APK_PATH"
+  if [[ -f "$APK_PATH" ]]; then
+    echo "APK status: found"
+  else
+    echo "APK status: missing"
+  fi
+  exit 0
+fi
 
 if [[ "$BUILD" == true ]]; then
   build_selected_variant
@@ -57,13 +89,6 @@ if [[ -z "$APK_PATH" || ! -f "$APK_PATH" ]]; then
   echo "APK not found after build for variant: $VARIANT" >&2
   echo "Expected under: $ROOT_DIR/../android-sdk-v5-sample/build/outputs/apk/$VARIANT" >&2
   exit 1
-fi
-
-if [[ "$CHECK_ONLY" == true ]]; then
-  echo "Variant: $VARIANT"
-  echo "Package: $PACKAGE_NAME"
-  echo "APK: $APK_PATH"
-  exit 0
 fi
 
 echo "Waiting for a DJI RC / Android device over ADB..."

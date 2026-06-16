@@ -117,11 +117,20 @@ git clone https://github.com/WildDrone/WildBridge.git
 ```
 
 1. Open `WildBridge/WildBridgeApp/android-sdk-v5-as` in Android Studio.
-2. Add your API key to `local.properties`:
+2. Create `local.properties` from the template and set the Android SDK path for your machine:
+    ```bash
+    cd WildBridge/WildBridgeApp/android-sdk-v5-as
+    cp local.properties.example local.properties
+    ```
+    Example for a default Linux Android Studio install:
+    ```properties
+    sdk.dir=/home/your-user/Android/Sdk
+    ```
+3. Add your DJI API key to `local.properties`:
    ```properties
    AIRCRAFT_API_KEY="Your_App_Key"
    ```
-3. Build and deploy to your RC or Android phone (enable Developer Mode + USB Debugging first).
+4. Build and deploy to your RC or Android phone (enable Developer Mode + USB Debugging first).
 
 Command-line build:
 
@@ -136,6 +145,21 @@ The debug APKs are written to:
 ```text
 WildBridgeApp/android-sdk-v5-sample/build/outputs/apk/current/debug/sample-currentDebug.apk
 WildBridgeApp/android-sdk-v5-sample/build/outputs/apk/demoBiomass/debug/sample-demoBiomassDebug.apk
+```
+
+To build/install a selected variant when an Android device is connected over ADB:
+
+```bash
+cd WildBridgeApp/android-sdk-v5-as
+./auto_install_on_connect.sh current --build
+./auto_install_on_connect.sh demo_biomass --build
+```
+
+To only check which APK will be used:
+
+```bash
+./auto_install_on_connect.sh current --check
+./auto_install_on_connect.sh demo_biomass --check
 ```
 
 ### Start the Server
